@@ -1,0 +1,6 @@
+{
+  "name": "Tuition Management System",
+  "description": "Full-stack tuition management platform connecting students and tutors with role-based dashboards, Stripe payments, and admin analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
