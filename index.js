@@ -2075,6 +2075,7 @@ async function run() {
         const application = await applicationsCollection.findOne({
           _id: new ObjectId(id),
         });
+        
         if (!application) {
           return res.status(404).send({
             success: false,
