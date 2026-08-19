@@ -8,11 +8,17 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mongodb": "^7.0.0"
+    "firebase-admin": "^13.10.0",
+    "mongodb": "^7.5.0",
+    "resend": "^6.20.0",
+    "stripe": "^20.4.1"
+  },
+  "description": "",
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
