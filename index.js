@@ -1574,8 +1574,99 @@ async function run() {
     });
 
     // PATCH /tuitions/:id - Update Tuition Details or Status (Student Owner or Admin)
-    
-    
+    app.patch("/tuitions/:id", verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isValidObjectId(id)) {
+          return res.status(400).send({ success: false, message: "Invalid tuition ID format" });
+        }
+
+        const tuition = await tuitionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!tuition) {
+          return res.status(404).send({ success: false, message: "Tuition post not found" });
+        }
+
+        const requesterEmail = req.decoded_email;
+        const requester = await usersCollection.findOne({ email: requesterEmail });
+        const isAdmin = requester?.role === "admin";
+        const isOwner = tuition.studentEmail === requesterEmail;
+
+        if (!isAdmin && !isOwner) {
+          return res.status(403).send({
+            success: false,
+            message: "Forbidden: You are not authorized to update this tuition post",
+          });
+        }
+
+        const updateFields = { updatedAt: new Date() };
+        const {
+          subject,
+          class: studentClass,
+          location,
+          budget,
+          schedule,
+          description,
+          status,
+        } = req.body;
+
+        // Admin can approve, reject, or assign status
+        if (isAdmin && status) {
+          const allowedStatuses = [
+            "pending",
+            "approved",
+            "rejected",
+            "assigned",
+            "completed",
+          ];
+          if (!allowedStatuses.includes(status)) {
+            return res.status(400).send({
+              success: false,
+              message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+            });
+          }
+          updateFields.status = status;
+        }
+
+        // Student owner can edit details if not yet assigned or completed
+        if (isOwner) {
+          if (tuition.status === "assigned" || tuition.status === "completed") {
+            return res.status(400).send({
+              success: false,
+              message: "Cannot modify a tuition that is already assigned or completed",
+            });
+          }
+          if (subject !== undefined) updateFields.subject = subject.trim();
+          if (studentClass !== undefined) updateFields.class = studentClass;
+          if (location !== undefined) updateFields.location = location.trim();
+          if (budget !== undefined) updateFields.budget = Number(budget);
+          if (schedule !== undefined) updateFields.schedule = schedule;
+          if (description !== undefined) updateFields.description = description;
+
+          // Revert to pending review on student modification
+          if (!isAdmin) {
+            updateFields.status = "pending";
+          }
+        }
+
+        await tuitionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateFields }
+        );
+
+        const updatedTuition = await tuitionsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        res.status(200).send({
+          success: true,
+          message: "Tuition post updated successfully",
+          tuition: updatedTuition,
+        });
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
     // DELETE /tuitions/:id - Delete Tuition Post (Student Owner or Admin)
     app.delete("/tuitions/:id", verifyFBToken, async (req, res) => {
       try {
@@ -1984,7 +2075,6 @@ async function run() {
         const application = await applicationsCollection.findOne({
           _id: new ObjectId(id),
         });
-
         if (!application) {
           return res.status(404).send({
             success: false,
