@@ -453,6 +453,12 @@ async function run() {
               updatedAt: new Date(),
             },
           };
+
+          // 👉 এই অংশটি যোগ করুন: যদি রিকোয়েস্টে রোল (tutor/student) পাঠানো হয়, তবে রোলও আপডেট হবে
+          if (role && (role === "tutor" || role === "student")) {
+            updateDoc.$set.role = role;
+          }
+
           await usersCollection.updateOne({ email }, updateDoc);
           const updatedUser = await usersCollection.findOne({ email });
           return res.status(200).send({
