@@ -632,7 +632,100 @@ async function run() {
     });
 
     // ============================================================
-    // ADMIN ENDPOINTS
+    // USERS LISTING & TUTOR RETRIEVAL (PUBLIC & ADMIN)
+    // ============================================================
+
+    const handleAdminGetUsers = async (req, res) => {
+      try {
+        const { role, search, page = 1, limit = 20, sort = "newest" } = req.query;
+        const query = {};
+
+        // Case-insensitive role matching
+        if (role) {
+          query.role = { $regex: new RegExp(`^${role.trim()}$`, "i") };
+        }
+
+        if (search) {
+          query.$or = [
+            { name: { $regex: search, $options: "i" } },
+            { email: { $regex: search, $options: "i" } },
+            { phone: { $regex: search, $options: "i" } },
+            { qualifications: { $regex: search, $options: "i" } },
+            { experience: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        let sortOption = { createdAt: -1 };
+        if (sort === "oldest") sortOption = { createdAt: 1 };
+        if (sort === "name_asc") sortOption = { name: 1 };
+        if (sort === "name_desc") sortOption = { name: -1 };
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await usersCollection.countDocuments(query);
+        const users = await usersCollection
+          .find(query)
+          .sort(sortOption)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+
+        const cleanUsers = users.map((u) => ({ ...u, _id: toIdString(u._id) }));
+
+        res.status(200).send({
+          success: true,
+          data: cleanUsers,
+          users: cleanUsers,
+          total,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(total / parseInt(limit)),
+        });
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    };
+
+    // GET /admin/users - শুধুমাত্র অ্যাডমিনদের জন্য
+    app.get("/admin/users", verifyFBToken, verifyAdmin, handleAdminGetUsers);
+
+    // GET /users - role=tutor হলে পাবলিকলি উন্মুক্ত, অন্যথায় Admin Required
+    app.get("/users", (req, res, next) => {
+      if (req.query.role && req.query.role.toLowerCase() === "tutor") {
+        return handleAdminGetUsers(req, res);
+      }
+      return verifyFBToken(req, res, () => {
+        verifyAdmin(req, res, () => {
+          handleAdminGetUsers(req, res);
+        });
+      });
+    });
+
+    // GET /tutors - পাবলিক টিউটর লিস্ট রুট
+    app.get("/tutors", (req, res) => {
+      req.query.role = "tutor";
+      return handleAdminGetUsers(req, res);
+    });
+
+    // GET /tutors/:id - একক টিউটরের প্রোফাইল রুট
+    app.get("/tutors/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isValidObjectId(id)) {
+          return res.status(400).send({ success: false, message: "Invalid tutor ID format" });
+        }
+        const tutor = await usersCollection.findOne({ _id: new ObjectId(id), role: "tutor" });
+        if (!tutor) {
+          return res.status(404).send({ success: false, message: "Tutor not found" });
+        }
+        const cleanTutor = { ...tutor, _id: toIdString(tutor._id) };
+        res.status(200).send({ success: true, data: cleanTutor, tutor: cleanTutor });
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+    // ============================================================
+    // ADMIN STATS & OPERATIONS
     // ============================================================
 
     app.get("/admin/stats", verifyFBToken, verifyAdmin, async (req, res) => {
@@ -682,49 +775,6 @@ async function run() {
         res.status(500).send({ success: false, message: error.message });
       }
     });
-
-    const handleAdminGetUsers = async (req, res) => {
-      try {
-        const { role, search, page = 1, limit = 20, sort = "newest" } = req.query;
-        const query = {};
-
-        if (role) query.role = role;
-        if (search) {
-          query.$or = [
-            { name: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-            { phone: { $regex: search, $options: "i" } },
-          ];
-        }
-
-        let sortOption = { createdAt: -1 };
-        if (sort === "oldest") sortOption = { createdAt: 1 };
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const total = await usersCollection.countDocuments(query);
-        const users = await usersCollection
-          .find(query)
-          .sort(sortOption)
-          .skip(skip)
-          .limit(parseInt(limit))
-          .toArray();
-
-        res.status(200).send({
-          success: true,
-          data: users,
-          users,
-          total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(total / parseInt(limit)),
-        });
-      } catch (error) {
-        res.status(500).send({ success: false, message: error.message });
-      }
-    };
-
-    app.get("/admin/users", verifyFBToken, verifyAdmin, handleAdminGetUsers);
-    app.get("/users", verifyFBToken, verifyAdmin, handleAdminGetUsers);
 
     app.patch("/admin/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
       try {
@@ -842,7 +892,7 @@ async function run() {
           return res.status(200).send({ success: true, data: [], payments: [], total: 0 });
         }
 
-        // বিশেষ ক্যারেক্টারযুক্ত ইমেইল নিরাপদ করতে Regex Escape
+        // নিরাপদ Regex এসকেপিং
         const escapedEmail = studentEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const payments = await paymentsCollection
           .find({
